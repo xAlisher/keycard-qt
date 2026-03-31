@@ -106,6 +106,12 @@ CommandSet::CommandSet(std::shared_ptr<Keycard::KeycardChannel> channel,
 CommandSet::~CommandSet() {
 };
 
+void CommandSet::invalidateCachedPairing()
+{
+    m_pairingInfo = PairingInfo();
+    m_pairingBoundInstanceUID.clear();
+}
+
 bool CommandSet::checkOK(const APDU::Response& response)
 {
     if (!response.isOK()) {
@@ -270,7 +276,8 @@ PairingInfo CommandSet::pair(const QString& pairingPassword)
     QByteArray pairingKey = hash3.result();
     
     m_pairingInfo = PairingInfo(pairingKey, pairingIndex);
-    
+    m_pairingBoundInstanceUID = m_cardInstanceUID;
+
     return m_pairingInfo;
 }
 
@@ -284,7 +291,8 @@ bool CommandSet::openSecureChannel(const PairingInfo& pairingInfo)
     }
     
     m_pairingInfo = pairingInfo;
-    
+    m_pairingBoundInstanceUID = m_cardInstanceUID;
+
     // Build OPEN_SECURE_CHANNEL command
     // P1 = pairing index, data = our ephemeral public key
     QByteArray data = m_secureChannel->rawPublicKey();
@@ -983,7 +991,7 @@ void CommandSet::factoryResetCleanup()
     // Clean up local state after successful factory reset
     m_secureChannel->reset();
     m_appInfo = ApplicationInfo();
-    m_pairingInfo = PairingInfo();
+    invalidateCachedPairing();
     m_cardInstanceUID.clear();
     m_wasAuthenticated = false;
     m_cachedPIN.clear();
@@ -1177,14 +1185,21 @@ bool CommandSet::ensurePairing()
     if (!m_appInfo.initialized) {
         qDebug() << "CommandSet: Card is pre-initialized, pairing not needed (card must be initialized first)";
         // Clear any invalid pairing info
-        m_pairingInfo = PairingInfo();
+        invalidateCachedPairing();
         return true;  // Not an error - just means card needs initialization
     }
-    
-    // Fast path: already have pairing for this card
+
+    // Cached pairing is only valid for the applet instance it was obtained for. Another Keycard can
+    // reuse the same PC/SC target id; onTargetDetected then skips handleCardSwap and stale pairing
+    // would otherwise be used with the wrong card.
     if (m_pairingInfo.isValid()) {
-        qDebug() << "CommandSet: Using cached pairing, index:" << m_pairingInfo.index;
-        return true;
+        if (m_pairingBoundInstanceUID.isEmpty() || m_pairingBoundInstanceUID != m_cardInstanceUID) {
+            qDebug() << "CommandSet: Discarding cached pairing (instance UID mismatch or unbound)";
+            invalidateCachedPairing();
+        } else {
+            qDebug() << "CommandSet: Using cached pairing, index:" << m_pairingInfo.index;
+            return true;
+        }
     }
     
     // Try to load from storage
@@ -1193,6 +1208,7 @@ bool CommandSet::ensurePairing()
         m_pairingInfo = m_pairingStorage->load(m_cardInstanceUID);
         
         if (m_pairingInfo.isValid()) {
+            m_pairingBoundInstanceUID = m_cardInstanceUID;
             qDebug() << "CommandSet: Loaded pairing from storage, index:" << m_pairingInfo.index;
             return true;
         }
@@ -1293,7 +1309,7 @@ void CommandSet::handleCardSwap()
     m_cachedStatus = ApplicationStatus();
     
     // Clear pairing info (old card's pairing)
-    m_pairingInfo = PairingInfo();
+    invalidateCachedPairing();
     
     // Clear app info (old card's metadata)
     m_appInfo = ApplicationInfo();

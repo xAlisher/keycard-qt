@@ -376,6 +376,7 @@ public:
                                        const QByteArray& encKey,
                                        const QByteArray& macKey) {
         m_pairingInfo = pairingInfo;
+        m_pairingBoundInstanceUID = m_cardInstanceUID;
         m_secureChannel->init(iv, encKey, macKey);
     }
     #endif
@@ -529,6 +530,9 @@ private:
 
     void setCardReady(bool ready);
 
+    /** Clears m_pairingInfo and the instance UID it was bound to (see m_pairingBoundInstanceUID). */
+    void invalidateCachedPairing();
+
     
     std::shared_ptr<Keycard::KeycardChannel> m_channel;
     std::shared_ptr<IPairingStorage> m_pairingStorage;  // Injected (can be null)
@@ -537,6 +541,8 @@ private:
     QSharedPointer<SecureChannel> m_secureChannel;
     ApplicationInfo m_appInfo;
     PairingInfo m_pairingInfo;
+    /** Hex instance UID of the applet m_pairingInfo was loaded/opened for; invalidates fast-path if select() sees another card. */
+    QString m_pairingBoundInstanceUID;
     QString m_cardInstanceUID;  // Current card UID (from select())
     QString m_targetId;         // Current target ID (from waitForCard())
     QString m_lastError;
