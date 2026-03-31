@@ -112,6 +112,19 @@ void CommandSet::invalidateCachedPairing()
     m_pairingBoundInstanceUID.clear();
 }
 
+void CommandSet::clearStaleCardSessionState()
+{
+    if (m_secureChannel) {
+        m_secureChannel->reset();
+    }
+    m_wasAuthenticated = false;
+    m_cachedPIN.clear();
+    m_hasCachedStatus = false;
+    m_cachedStatus = ApplicationStatus();
+    invalidateCachedPairing();
+    m_needsSecureChannelReestablishment = true;
+}
+
 bool CommandSet::checkOK(const APDU::Response& response)
 {
     if (!response.isOK()) {
@@ -152,13 +165,29 @@ ApplicationInfo CommandSet::select(bool force)
         return ApplicationInfo();
     }
     
+    const QString previousInstanceHex = m_cardInstanceUID;
+
     // Parse application info
     m_appInfo = parseApplicationInfo(response.data());
+
+    QString newInstanceHex;
+    if (!m_appInfo.instanceUID.isEmpty()) {
+        newInstanceHex = m_appInfo.instanceUID.toHex();
+    }
+
+    // PC/SC (and some NFC stacks) can report the same target id for a different physical Keycard.
+    // onTargetDetected then skips handleCardSwap(); detect swap here via applet instance UID.
+    if (!previousInstanceHex.isEmpty() && !newInstanceHex.isEmpty()
+        && newInstanceHex != previousInstanceHex) {
+        qWarning() << "CommandSet: Applet instance UID changed (same channel target id?) —"
+                   << "clearing pairing / secure channel (was:" << previousInstanceHex << "now:" << newInstanceHex << ")";
+        clearStaleCardSessionState();
+    }
     
     // Update card instance UID for pairing management
     // Only initialized cards have instance UIDs and need pairing
-    if (!m_appInfo.instanceUID.isEmpty()) {
-        m_cardInstanceUID = m_appInfo.instanceUID.toHex();
+    if (!newInstanceHex.isEmpty()) {
+        m_cardInstanceUID = newInstanceHex;
     } else {
         // Pre-initialized card: no instance UID yet, no pairing needed
         m_cardInstanceUID.clear();
@@ -1294,24 +1323,9 @@ void CommandSet::clearAuthenticationCache()
 void CommandSet::handleCardSwap()
 {
     qWarning() << "CommandSet: CARD SWAP DETECTED - Clearing ALL state";
-    
-    // Clear secure channel crypto state
-    if (m_secureChannel) {
-        m_secureChannel->reset();
-    }
-    
-    // Clear authentication state (PIN cache)
-    m_wasAuthenticated = false;
-    m_cachedPIN.clear();
-    
-    // Clear cached status (invalidate on card swap)
-    m_hasCachedStatus = false;
-    m_cachedStatus = ApplicationStatus();
-    
-    // Clear pairing info (old card's pairing)
-    invalidateCachedPairing();
-    
-    // Clear app info (old card's metadata)
+
+    clearStaleCardSessionState();
+
     m_appInfo = ApplicationInfo();
     
     qWarning() << "CommandSet: All state cleared - flow must restart with new card";

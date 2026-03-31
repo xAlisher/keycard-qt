@@ -533,6 +533,13 @@ private:
     /** Clears m_pairingInfo and the instance UID it was bound to (see m_pairingBoundInstanceUID). */
     void invalidateCachedPairing();
 
+    /**
+     * Resets secure channel crypto, auth cache, status cache, and pairing.
+     * Used on physical card swap (target id change) and when SELECT shows a different applet instance
+     * (same PC/SC target id, different Keycard).
+     */
+    void clearStaleCardSessionState();
+
     
     std::shared_ptr<Keycard::KeycardChannel> m_channel;
     std::shared_ptr<IPairingStorage> m_pairingStorage;  // Injected (can be null)
