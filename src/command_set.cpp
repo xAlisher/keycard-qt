@@ -750,12 +750,44 @@ QByteArray CommandSet::signWithPath(const QByteArray& data, const QString& path,
         return QByteArray();
     }
 
-    // Schnorr returns raw 64-byte R||s (no public key prefix)
-    // ECDSA returns pubkey (65 bytes) + signature — skip pubkey
+    // SIGN response TLV: A0 [ 0x80(pubkey, 65 bytes), <sig tag>(sig, variable) ]
+    // Schnorr: sig tag = 0x80, sig = raw 64-byte R||s
+    // ECDSA:   sig tag = 0x30 (DER SEQUENCE), sig = DER-encoded variable length
+    // Strategy: unwrap outer A0, skip the first 0x80 (pubkey), return the next tag's payload.
     QByteArray fullResp = resp.data();
-    if (scheme == APDU::P2SignECDSA && fullResp.size() > 65) {
-        return fullResp.mid(65);
+
+    // Unwrap outer A0 tag
+    QByteArray inner;
+    if (!fullResp.isEmpty() && static_cast<uint8_t>(fullResp[0]) == 0xA0) {
+        int offset = 1;
+        uint8_t l = static_cast<uint8_t>(fullResp[offset++]);
+        if (l == 0x81) l = static_cast<uint8_t>(fullResp[offset++]);
+        inner = fullResp.mid(offset, l);
+    } else {
+        inner = fullResp;
     }
+
+    // Skip first 0x80 tag (pubkey), extract payload of next tag (signature)
+    int i = 0;
+    bool pubkeySkipped = false;
+    while (i < inner.size()) {
+        uint8_t tag = static_cast<uint8_t>(inner[i++]);
+        if (i >= inner.size()) break;
+        uint8_t tagLen = static_cast<uint8_t>(inner[i++]);
+        if (tagLen == 0x81 && i < inner.size()) tagLen = static_cast<uint8_t>(inner[i++]);
+        if (i + tagLen > inner.size()) break;
+        if (!pubkeySkipped && tag == 0x80) {
+            // First 0x80 is the pubkey — skip it
+            pubkeySkipped = true;
+        } else if (pubkeySkipped) {
+            // Next tag (0x80 for Schnorr, 0x30 for ECDSA) contains the signature
+            return inner.mid(i, tagLen);
+        }
+        i += tagLen;
+    }
+
+    // Fallback: return raw response (handles non-TLV or unexpected formats)
+    qWarning() << "signWithPath: could not parse TLV response, returning raw bytes";
     return fullResp;
 }
 
