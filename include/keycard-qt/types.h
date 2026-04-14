@@ -190,7 +190,15 @@ namespace APDU {
     constexpr uint8_t P1SignPinless = 0x03;
     
     constexpr uint8_t P1LoadKeySeed = 0x03;
-    
+
+    // P2 values for SIGN instruction (confirmed by bitgamma, #96)
+    constexpr uint8_t P2SignECDSA    = 0x00;
+    constexpr uint8_t P2SignSchnorr  = 0x03;  // BIP340 Schnorr
+
+    // P2 values for LOAD KEY instruction
+    constexpr uint8_t P2LoadKeyBIP39 = 0x00;
+    constexpr uint8_t P2LoadKeyLEE   = 0x01;
+
     constexpr uint8_t P1StoreDataPublic = 0x00;
     constexpr uint8_t P1StoreDataNDEF = 0x01;
     constexpr uint8_t P1StoreDataCash = 0x02;

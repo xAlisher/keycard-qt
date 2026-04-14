@@ -649,22 +649,26 @@ QVector<int> CommandSet::generateMnemonic(int checksumSize)
 
 QByteArray CommandSet::loadSeed(const QByteArray& seed)
 {
-    qDebug() << "CommandSet::loadSeed()";
-    
-    // Validate input first
+    return loadKey(seed, APDU::P2LoadKeyBIP39);
+}
+
+QByteArray CommandSet::loadKey(const QByteArray& seed, uint8_t keyType)
+{
+    qDebug() << "CommandSet::loadKey() keyType:" << keyType;
+
     if (seed.size() != 64) {
         m_lastError = "Seed must be 64 bytes";
         qWarning() << m_lastError;
         return QByteArray();
     }
-    
-    APDU::Command cmd = buildCommand(APDU::INS_LOAD_KEY, APDU::P1LoadKeySeed, 0, seed);
+
+    APDU::Command cmd = buildCommand(APDU::INS_LOAD_KEY, APDU::P1LoadKeySeed, keyType, seed);
     APDU::Response resp = send(cmd, true);
-    
+
     if (!checkOK(resp)) {
         return QByteArray();
     }
-    
+
     // Response is the key UID (32 bytes)
     return resp.data();
 }
@@ -721,67 +725,63 @@ QByteArray CommandSet::sign(const QByteArray& data)
     return fullResp;
 }
 
-QByteArray CommandSet::signWithPath(const QByteArray& data, const QString& path, bool makeCurrent)
+QByteArray CommandSet::signWithPath(const QByteArray& data, const QString& path, bool makeCurrent, uint8_t scheme)
 {
-    qDebug() << "CommandSet::signWithPath() path:" << path << "makeCurrent:" << makeCurrent;
-    
-    // Validate input first
+    qDebug() << "CommandSet::signWithPath() path:" << path << "makeCurrent:" << makeCurrent << "scheme:" << scheme;
+
     if (data.size() != 32) {
         m_lastError = "Data must be 32 bytes (hash)";
         qWarning() << m_lastError;
         return QByteArray();
     }
-    
+
     uint8_t startingPoint = APDU::P1DeriveKeyFromMaster;
     QByteArray pathData = parseDerivationPath(path, startingPoint);
-    
+
     uint8_t p1 = makeCurrent ? APDU::P1SignDeriveAndMakeCurrent : APDU::P1SignDerive;
-    
-    // Concatenate data + path
+
     QByteArray cmdData = data + pathData;
-    
-    APDU::Command cmd = buildCommand(APDU::INS_SIGN, p1, 1, cmdData);
+
+    APDU::Command cmd = buildCommand(APDU::INS_SIGN, p1, scheme, cmdData);
     APDU::Response resp = send(cmd, true);
-    
+
     if (!checkOK(resp)) {
         return QByteArray();
     }
-    
-    // Skip public key, return signature
+
+    // Schnorr returns raw 64-byte R||s (no public key prefix)
+    // ECDSA returns pubkey (65 bytes) + signature — skip pubkey
     QByteArray fullResp = resp.data();
-    if (fullResp.size() > 65) {
+    if (scheme == APDU::P2SignECDSA && fullResp.size() > 65) {
         return fullResp.mid(65);
     }
     return fullResp;
 }
 
-QByteArray CommandSet::signWithPathFullResponse(const QByteArray& data, const QString& path, bool makeCurrent)
+QByteArray CommandSet::signWithPathFullResponse(const QByteArray& data, const QString& path, bool makeCurrent, uint8_t scheme)
 {
-    qDebug() << "CommandSet::signWithPathFullResponse() path:" << path << "makeCurrent:" << makeCurrent;
-    
-    // Validate input first
+    qDebug() << "CommandSet::signWithPathFullResponse() path:" << path << "makeCurrent:" << makeCurrent << "scheme:" << scheme;
+
     if (data.size() != 32) {
         m_lastError = "Data must be 32 bytes (hash)";
         qWarning() << m_lastError;
         return QByteArray();
     }
-    
+
     uint8_t startingPoint = APDU::P1DeriveKeyFromMaster;
     QByteArray pathData = parseDerivationPath(path, startingPoint);
-    
+
     uint8_t p1 = makeCurrent ? APDU::P1SignDeriveAndMakeCurrent : APDU::P1SignDerive;
-    
-    // Concatenate data + path
+
     QByteArray cmdData = data + pathData;
-    
-    APDU::Command cmd = buildCommand(APDU::INS_SIGN, p1, 1, cmdData);
+
+    APDU::Command cmd = buildCommand(APDU::INS_SIGN, p1, scheme, cmdData);
     APDU::Response resp = send(cmd, true);
-    
+
     if (!checkOK(resp)) {
         return QByteArray();
     }
-    
-    // Return the full TLV response (includes public key and signature)
+
     return resp.data();
 }
 

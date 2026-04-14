@@ -178,11 +178,19 @@ public:
     QVector<int> generateMnemonic(int checksumSize = 4);
     
     /**
-     * @brief Load seed to card
+     * @brief Load seed to card (BIP39 only, P2=0x00)
      * @param seed BIP39 seed (64 bytes)
      * @return Key UID on success
      */
     QByteArray loadSeed(const QByteArray& seed);
+
+    /**
+     * @brief Load seed to card with explicit key type
+     * @param seed Seed bytes (64 bytes)
+     * @param keyType P2LoadKeyBIP39 (0x00) or P2LoadKeyLEE (0x01)
+     * @return Key UID on success
+     */
+    QByteArray loadKey(const QByteArray& seed, uint8_t keyType = APDU::P2LoadKeyBIP39);
     
     /**
      * @brief Remove key from card
@@ -210,18 +218,20 @@ public:
      * @param data 32-byte hash to sign
      * @param path Derivation path
      * @param makeCurrent If true, derived key becomes current
+     * @param scheme Signing scheme: P2SignECDSA (0x00) or P2SignSchnorr (0x03)
      * @return Signature on success
      */
-    QByteArray signWithPath(const QByteArray& data, const QString& path, bool makeCurrent = false);
-    
+    QByteArray signWithPath(const QByteArray& data, const QString& path, bool makeCurrent = false, uint8_t scheme = APDU::P2SignECDSA);
+
     /**
      * @brief Sign data with key at specific path, returning full TLV response
      * @param data 32-byte hash to sign
      * @param path Derivation path
      * @param makeCurrent If true, derived key becomes current
+     * @param scheme Signing scheme: P2SignECDSA (0x00) or P2SignSchnorr (0x03)
      * @return Full TLV response (includes public key and signature) on success
      */
-    QByteArray signWithPathFullResponse(const QByteArray& data, const QString& path, bool makeCurrent = false);
+    QByteArray signWithPathFullResponse(const QByteArray& data, const QString& path, bool makeCurrent = false, uint8_t scheme = APDU::P2SignECDSA);
     
     /**
      * @brief Sign without PIN (if pinless path set)
