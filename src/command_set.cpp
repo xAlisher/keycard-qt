@@ -750,10 +750,10 @@ QByteArray CommandSet::signWithPath(const QByteArray& data, const QString& path,
         return QByteArray();
     }
 
-    // SIGN response TLV: A0 [ 0x80(pubkey, 65 bytes), <sig tag>(sig, variable) ]
-    // Schnorr: sig tag = 0x80, sig = raw 64-byte R||s
-    // ECDSA:   sig tag = 0x30 (DER SEQUENCE), sig = DER-encoded variable length
-    // Strategy: unwrap outer A0, skip the first 0x80 (pubkey), return the next tag's payload.
+    // SIGN response TLV: A0 [ 0x80(pubkey, 65 bytes), <sig-tag>(sig, variable) ]
+    // Schnorr: sig-tag = 0x80 → return raw payload (64-byte R||s)
+    // ECDSA:   sig-tag = 0x30 → return the FULL TLV item (0x30 + len + contents = DER sig)
+    // For 0x80: payload IS the signature. For 0x30: the tag+length+contents IS the DER sig.
     QByteArray fullResp = resp.data();
 
     // Unwrap outer A0 tag
@@ -767,21 +767,26 @@ QByteArray CommandSet::signWithPath(const QByteArray& data, const QString& path,
         inner = fullResp;
     }
 
-    // Skip first 0x80 tag (pubkey), extract payload of next tag (signature)
+    // Skip first 0x80 tag (pubkey), extract signature from next tag
     int i = 0;
     bool pubkeySkipped = false;
     while (i < inner.size()) {
+        int tagStart = i;                                  // start of this TLV item
         uint8_t tag = static_cast<uint8_t>(inner[i++]);
         if (i >= inner.size()) break;
-        uint8_t tagLen = static_cast<uint8_t>(inner[i++]);
+        int tagLen = static_cast<uint8_t>(inner[i++]);
         if (tagLen == 0x81 && i < inner.size()) tagLen = static_cast<uint8_t>(inner[i++]);
         if (i + tagLen > inner.size()) break;
         if (!pubkeySkipped && tag == 0x80) {
-            // First 0x80 is the pubkey — skip it
-            pubkeySkipped = true;
+            pubkeySkipped = true;                          // first 0x80 = pubkey
         } else if (pubkeySkipped) {
-            // Next tag (0x80 for Schnorr, 0x30 for ECDSA) contains the signature
-            return inner.mid(i, tagLen);
+            if (tag == 0x80) {
+                // Schnorr: 0x80 payload = raw 64-byte R||s
+                return inner.mid(i, tagLen);
+            } else {
+                // ECDSA (0x30): full TLV item = DER-encoded signature
+                return inner.mid(tagStart, i - tagStart + tagLen);
+            }
         }
         i += tagLen;
     }
