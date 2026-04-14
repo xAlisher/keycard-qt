@@ -254,14 +254,14 @@ PairingInfo CommandSet::pair(const QString& pairingPassword)
         return PairingInfo();
     }
     
-    if (resp2.data().isEmpty()) {
-        m_lastError = "No pairing data in response";
+    if (resp2.data().size() < 33) {
+        m_lastError = QString("Invalid pair step 2 response: expected 33 bytes, got %1").arg(resp2.data().size());
         return PairingInfo();
     }
-    
-    // Parse pairing info
+
+    // Parse pairing info: [pairingIndex (1)][pairingSalt (32)]
     uint8_t pairingIndex = static_cast<uint8_t>(resp2.data()[0]);
-    QByteArray salt = resp2.data().mid(1);
+    QByteArray salt = resp2.data().mid(1, 32);  // exactly 32 bytes
     
     // Compute pairing key: SHA256(secretHash + salt)
     QCryptographicHash hash3(QCryptographicHash::Sha256);
@@ -476,6 +476,7 @@ bool CommandSet::verifyPIN(const QString& pin)
     
     APDU::Command cmd = buildCommand(APDU::INS_VERIFY_PIN, 0, 0, pin.toUtf8());
     APDU::Response resp = send(cmd, true);  // Automatic: waitForCard() + ensureSecureChannel()
+
 
     // Check for wrong PIN (SW1=0x63, SW2=0xCX where X = remaining attempts)
     if ((resp.sw() & 0x63C0) == 0x63C0) {
