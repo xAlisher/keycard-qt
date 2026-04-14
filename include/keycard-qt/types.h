@@ -17,6 +17,7 @@ enum class Capability : uint8_t {
     CredentialsManagement = 0x04,
     NDEF = 0x08,
     FactoryReset = 0x10,
+    LEEKey = 0x20,   // Bit 5 set in tag 0x8D when a LEE key is loaded (applet v3.2+)
     All = 0xFF
 };
 
@@ -55,6 +56,15 @@ struct ApplicationInfo {
      */
     bool hasFactoryResetCapability() const {
         return hasCapability(Capability::FactoryReset);
+    }
+
+    /**
+     * @brief Returns true when a LEE key is currently loaded on the card.
+     * Reads bit 5 (0x20) of the capabilities byte from SELECT response tag 0x8D.
+     * Only meaningful when keyInitialized is true.
+     */
+    bool isLEEKey() const {
+        return hasCapability(Capability::LEEKey);
     }
 };
 
