@@ -644,10 +644,7 @@ void KeycardChannelPcsc::detectionLoop()
                     // Failed to connect - break inner loop to re-enumerate readers
                     // This prevents infinite loop when PC/SC reports card present
                     // but connection fails (e.g. SCARD_W_REMOVED_CARD)
-                    // Emit error signal so upper layers (SessionManager) can set
-                    // ConnectionError state instead of silently retrying.
-                    qDebug() << "KeycardChannelPcsc: Connection failed, emitting error and breaking to re-enumerate";
-                    emit error("Failed to connect to card in reader: " + readerName);
+                    qDebug() << "KeycardChannelPcsc: Connection failed, breaking to re-enumerate";
                     break;
                 }
             }
