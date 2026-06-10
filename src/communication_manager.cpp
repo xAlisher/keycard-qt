@@ -374,6 +374,10 @@ CommandResult CommunicationManager::executeCommandSync(std::unique_ptr<CardComma
     QThread* currentThread = QThread::currentThread();
     bool isMainThread = (currentThread == mainThread);
     
+    // Extract result and clean up inside each branch while lock is held —
+    // re-acquiring m_syncMutex after the branch's QMutexLocker is still in scope causes EDEADLK.
+    CommandResult finalResult;
+
     if (isMainThread) {
         // MAIN THREAD: Process events while waiting so UI stays responsive.
         qDebug() << "CommunicationManager: Waiting on main thread for sync completion";
@@ -390,6 +394,16 @@ CommandResult CommunicationManager::executeCommandSync(std::unique_ptr<CardComma
                 sync->condition.wait(&m_syncMutex, 100);
             }
         }
+
+        // Still holding locker — extract and remove while lock is held.
+        if (!sync->completed) {
+            qWarning() << "CommunicationManager: Sync command ended without completion:" << cmdName;
+            finalResult = CommandResult::fromError("CommunicationManager stopped");
+        } else {
+            finalResult = sync->result;
+        }
+        m_pendingSync.remove(token);
+
     } else {
         // BACKGROUND THREAD: Wait until command completes or manager stops.
         qDebug() << "CommunicationManager: Waiting on background thread for sync completion";
@@ -403,23 +417,12 @@ CommandResult CommunicationManager::executeCommandSync(std::unique_ptr<CardComma
             sync->completed = true;
             sync->result = CommandResult::fromError("CommunicationManager stopped");
         }
-    }
-    
-    // Check final result and get return value while sync is still valid
-    CommandResult finalResult;
-    {
-        QMutexLocker locker(&m_syncMutex);
-        if (!sync->completed) {
-            qWarning() << "CommunicationManager: Sync command ended without completion:" << cmdName;
-            finalResult = CommandResult::fromError("CommunicationManager stopped");
-        } else {
-            finalResult = sync->result;
-        }
-        
-        // Remove from map - shared_ptr will keep it alive if comm thread still has reference
+
+        // Still holding locker — extract and remove while lock is held.
+        finalResult = sync->result;
         m_pendingSync.remove(token);
     }
-    
+
     return finalResult;
 }
 

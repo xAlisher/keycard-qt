@@ -123,6 +123,11 @@ void CommandSet::clearStaleCardSessionState()
     m_cachedStatus = ApplicationStatus();
     invalidateCachedPairing();
     m_needsSecureChannelReestablishment = true;
+    // Clear cached appInfo so select() is forced to re-select on next card insertion.
+    // Without this, reinsertion skips SELECT and OPEN_SECURE_CHANNEL fires against
+    // an unselected card, returning SW=6D00.
+    m_appInfo = ApplicationInfo();
+    m_cardInstanceUID.clear();
 }
 
 bool CommandSet::checkOK(const APDU::Response& response)
@@ -1538,6 +1543,11 @@ void CommandSet::onTargetLost() {
              << "(thread:" << QThread::currentThreadId() << ")";
     
     resetSecureChannel();
+    // Clear cached appInfo: even the same card re-inserted must go through SELECT again.
+    // Without this, select() returns the stale cache, OPEN_SECURE_CHANNEL fires
+    // against an unselected card, and the card returns SW=6D00.
+    m_appInfo = ApplicationInfo();
+    m_cardInstanceUID.clear();
     m_cardReady.store(false);
     // Notify card loss only if we had a card before
     if (!m_targetId.isEmpty()) {
